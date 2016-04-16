@@ -36,42 +36,80 @@ struct Line
 
 /////////////////////////////////////////////////////////////////////
 // Shape
+type PointFunc = Fn(f32, f32, f32) -> Vec2d;
 struct Shape
 {
 	// Position for shape.
 	position: Vec2d,
 	// Points for shape.
 	points: Vec<Vec2d>,
-	// Function to update points given a 0.0-1.0 for where in shape, time, and morph.
-	point_fn: Box<Fn(f32, f32, f32) -> Vec2d>,
+	// Functions to update points given a 0.0-1.0 for where in shape, time, and morph.
+	point_fns: [ Option<Box<PointFunc>>; 2 ],
+	// Current function.
+	curr_fn_idx: usize,
 	// Shape blend parameter.
 	morph: f32,
 }
 
 impl Shape
 {
-	fn new(in_position: &Vec2d, num_points: usize, in_point_fn: Box<Fn(f32, f32, f32) -> Vec2d>) -> Shape 
+	fn new(in_position: &Vec2d, num_points: usize, in_point_fn: Box<PointFunc>) -> Shape 
 	{
 		let mut shape = Shape
 		{
 			position: Vec2d::new(in_position.x, in_position.y),
 			points: Vec::with_capacity(num_points),
-			point_fn: in_point_fn,
+			point_fns: [ in_point_fn, Option::None ],
+			curr_fn_idx: 0,
 			morph: 0.0
 		};
 		shape.points.resize(num_points, Vec2d::new(0.0, 0.0));
-		shape.update(0.0, 0.0);
+		shape.update(0.0, 0.0, 0.0);
 		return shape;
 	}
 
-	fn update(&mut self, t: f32, morph: f32)
+	fn update(&mut self, tick: f32, time: f32, morph: f32)
 	{
 		let num_points = self.points.len();
 		let mul_val = 1.0 / num_points as f32;
-		for idx in 0..num_points
 		{
-			self.points[idx] = (*self.point_fn)(idx as f32 * mul_val, t, morph);
+			let &curr_point_fn = self.points_fns[self.curr_fn_idx];
+			let &next_point_fn = self.points_fns[1 - self.curr_fn_idx];
+
+			for idx in 0..num_points
+			{
+
+				let point_a = (*curr_point_fn)(idx as f32 * mul_val, time, morph);
+
+				match next_point_fn.as_mut()
+				{
+					Some(next_point_fn) => 
+					{
+						let point_b = (*next_point_fn)(idx as f32 * mul_val, time, morph);
+						self.points[idx] = (point_a * morph) + (point_b * (1.0 - morph));
+						self.morph += tick;
+					}
+					None => self.points[idx] = point_a,
+				}
+			}
 		}
+
+		if self.morph > 1.0
+		{
+			let next_point_fn = self.next_point_fn.clone();
+			//let next = *next_point_fn;
+			//self.next_point_fn = None;
+			//self.curr_point_fn = next_point_fn;
+			self.morph = 0.0;
+			self.curr_fn_idx = 1 - self.curr_fn_idx
+
+		}
+	}
+
+	fn set_next(&mut self, point_fn: Box<PointFunc>)
+	{
+		self.next_point_fn = Some(point_fn);
+		self.morph = 0.0;
 	}
 
 	fn draw(&self, renderer: &mut sdl2::render::Renderer)
@@ -93,7 +131,7 @@ fn get_time_seconds() -> f32
 	precise_time_s() as f32
 }
 
-fn make_flat_wave_shape_function(size: f32, points: u32) -> Box<Fn(f32, f32, f32) -> Vec2d>
+fn make_flat_wave_shape_function(size: f32, points: u32) -> Box<PointFunc>
 {
 	let update_fn = move |x: f32, t: f32, b: f32| -> Vec2d
 	{
@@ -105,7 +143,7 @@ fn make_flat_wave_shape_function(size: f32, points: u32) -> Box<Fn(f32, f32, f32
 	return Box::new(update_fn);
 }
 
-fn make_sine_wave_shape_function(size: f32, points: u32) -> Box<Fn(f32, f32, f32) -> Vec2d>
+fn make_sine_wave_shape_function(size: f32, points: u32) -> Box<PointFunc>
 {
 	let update_fn = move |x: f32, t: f32, b: f32| -> Vec2d
 	{
@@ -119,7 +157,7 @@ fn make_sine_wave_shape_function(size: f32, points: u32) -> Box<Fn(f32, f32, f32
 	return Box::new(update_fn);
 }
 
-fn make_triangle_wave_shape_function(size: f32, points: u32) -> Box<Fn(f32, f32, f32) -> Vec2d>
+fn make_triangle_wave_shape_function(size: f32, points: u32) -> Box<PointFunc>
 {
 	let update_fn = move |x: f32, t: f32, b: f32| -> Vec2d
 	{
@@ -143,7 +181,7 @@ fn make_triangle_wave_shape_function(size: f32, points: u32) -> Box<Fn(f32, f32,
 	return Box::new(update_fn);
 }
 
-fn make_square_wave_shape_function(size: f32, points: u32) -> Box<Fn(f32, f32, f32) -> Vec2d>
+fn make_square_wave_shape_function(size: f32, points: u32) -> Box<PointFunc>
 {
 	let update_fn = move |x: f32, t: f32, b: f32| -> Vec2d
 	{
@@ -165,18 +203,6 @@ fn make_square_wave_shape_function(size: f32, points: u32) -> Box<Fn(f32, f32, f
 	};
 
 	return Box::new(update_fn);
-}
-
-fn make_combined_shape_function(size: f32, points: u32) -> Box<Fn(f32, f32, f32) -> Vec2d>
-{
-	let func_a = make_sine_wave_shape_function(size, points);
-	let func_b = make_square_wave_shape_function(size, points);
-	let update_fn = move |x: f32, t: f32, b: f32| -> Vec2d
-	{
-		return (func_a(x, t, b) * b) + (func_b(x, t, b) * (1.0 - b));
-	};
-
-	return Box::new(update_fn);	
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -203,19 +229,18 @@ fn main()
 
 	let mut position = Vec2d::new(WIDTH as f32, HEIGHT as f32) * 0.5;
 
-	let mut timer = 0.0f32;
+	let mut time = 0.0f32;
 	let mut tick = 0.0f32;
 	let mut lastTime = get_time_seconds();
 
 	let mut shapes = Vec::<Shape>::new();
-	let mut shape_fns = Vec::<Box<Fn(f32, f32) -> Vec2d>>::new();
 
 	let pos0 = Vec2d::new(1.0 * WIDTH as f32 / 4.0, 1.0 * HEIGHT as f32 / 4.0);
 	let pos1 = Vec2d::new(3.0 * WIDTH as f32 / 4.0, 1.0 * HEIGHT as f32 / 4.0);
 	let pos2 = Vec2d::new(1.0 * WIDTH as f32 / 4.0, 3.0 * HEIGHT as f32 / 4.0);
 	let pos3 = Vec2d::new(3.0 * WIDTH as f32 / 4.0, 3.0 * HEIGHT as f32 / 4.0);
 
-	shapes.push(Shape::new(&pos0, 64, make_combined_shape_function(96.0, 8)));
+	shapes.push(Shape::new(&pos0, 64, make_flat_wave_shape_function(96.0, 8)));
 	shapes.push(Shape::new(&pos1, 64, make_sine_wave_shape_function(96.0, 8)));
 	shapes.push(Shape::new(&pos2, 64, make_triangle_wave_shape_function(96.0, 8)));
 	shapes.push(Shape::new(&pos3, 64, make_square_wave_shape_function(96.0, 8)));
@@ -231,7 +256,9 @@ fn main()
 				Event::Quit {..} => break 'running,
 				Event::KeyDown { keycode: Some(Keycode::Up), .. } => blend = blend + 0.1,
 				Event::KeyDown { keycode: Some(Keycode::Down), .. } => blend = blend - 0.1,
-				_ => {}
+				Event::KeyDown { keycode: Some(Keycode::Left), .. } => shapes[0].set_next(make_sine_wave_shape_function(96.0, 8)),
+				Event::KeyDown { keycode: Some(Keycode::Right), .. } => shapes[0].set_next(make_square_wave_shape_function(96.0, 8)),
+				_ => {},
 			}
 		}
 
@@ -242,7 +269,7 @@ fn main()
 		for idx in 0..shapes.len()
 		{
 			let mut shape = &mut shapes[idx];
-			shape.update(timer, blend);
+			shape.update(tick, time, blend);
 		}
 
 		for idx in 0..shapes.len()
@@ -257,7 +284,7 @@ fn main()
 		let nextTime = get_time_seconds();
 		tick = nextTime - lastTime;
 		lastTime = nextTime;
-		timer = timer + tick;
+		time = time + tick;
 	}
 }
 
