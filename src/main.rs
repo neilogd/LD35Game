@@ -8,12 +8,14 @@ use sdl2::event::Event;
 use sdl2::rect::{Point, Rect};
 use sdl2::render::{Renderer, BlendMode};
 
-use std::sync::mpsc::{Sender, Receiver, channel};
 
 pub mod math;
 
-use math::*;
+use std::io::prelude::*;
+use std::fs::File;
 use std::f32::consts::{PI};
+use std::sync::mpsc::{Sender, Receiver, channel};
+use math::*;
 use time::*;
 use rand::Rng;
 
@@ -661,6 +663,25 @@ fn main()
 	let mut score_multiplier = 1;
 	let mut high_score = 0;
 
+	let high_score_filename = "highscore.txt";
+
+	match File::open(high_score_filename)
+	{
+		Ok(file) =>
+		{
+			let mut opened_file = file;
+			let mut s = String::new();
+			opened_file.read_to_string(&mut s);
+			high_score = match s.parse::<i32>()
+			{
+				Ok(v) => v,
+				Err(..) => 0
+			};
+		}
+		Err(e) => {}
+	};
+
+
 	let mut popup_texts = Vec::<PopupText>::new();
 
 	let mut shapes = Vec::<Shape>::new();
@@ -730,6 +751,8 @@ fn main()
 						if score > high_score
 						{
 							high_score = score;
+							let mut file = File::create(high_score_filename);
+							file.unwrap().write_fmt(format_args!("{}", high_score));
 						}
 
 						let selected_shape_idx = rng.gen::<usize>() % 2;
