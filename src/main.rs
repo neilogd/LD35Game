@@ -359,9 +359,9 @@ fn build_shapes(level: u32) -> Vec<Shape>
 	let mut rng = rand::thread_rng();
 
 	let pos = &mut [
-		Vec2d::new(1.0 * WIDTH as f32 / 3.0, 2.0 * HEIGHT as f32 / 4.0),
-		//Vec2d::new(2.0 * WIDTH as f32 / 4.0, 2.0 * HEIGHT as f32 / 4.0),
-		Vec2d::new(2.0 * WIDTH as f32 / 3.0, 2.0 * HEIGHT as f32 / 4.0),
+		Vec2d::new(1.0 * WIDTH as f32 / 4.0, 2.0 * HEIGHT as f32 / 4.0),
+		Vec2d::new(3.0 * WIDTH as f32 / 4.0, 2.0 * HEIGHT as f32 / 4.0),
+		Vec2d::new(2.0 * WIDTH as f32 / 4.0, 2.0 * HEIGHT as f32 / 4.0),
 	];
 
 	if level >= 0
@@ -406,6 +406,20 @@ fn build_shapes(level: u32) -> Vec<Shape>
 		}
 	}
 	
+	if level >= 20
+	{
+		for shape_idx in 0..3
+		{
+			let channels = [
+				MixerChannel::Sine(110.0, if shape_idx == 0 { 0.5 } else { 0.0 } ),
+				MixerChannel::Square(110.0, if shape_idx == 1 { 0.5 } else { 0.0 } ),
+				MixerChannel::Sawtooth(110.0, if shape_idx == 2 { 0.5 } else { 0.0 } ),
+			];
+
+			shapes.push(Shape::new(Vec2d::new(0.0, 0.0), 1024, channels));
+		}
+	}
+	
 
 	if level >= 30
 	{
@@ -428,11 +442,26 @@ fn build_shapes(level: u32) -> Vec<Shape>
 		shapes.push(val);
 	}
 	let mut new_shapes = Vec::<Shape>::new();
-	new_shapes.push(shapes.swap_remove(0));
-	new_shapes.push(shapes.swap_remove(0));
 
-	new_shapes[0].position = pos[0];
-	new_shapes[1].position = pos[1];
+
+	if level < 20
+	{
+		new_shapes.push(shapes.swap_remove(0));
+		new_shapes.push(shapes.swap_remove(0));
+
+		new_shapes[0].position = pos[0];
+		new_shapes[1].position = pos[1];
+	}
+	else 
+	{
+		new_shapes.push(shapes.swap_remove(0));
+		new_shapes.push(shapes.swap_remove(0));
+		new_shapes.push(shapes.swap_remove(0));
+
+		new_shapes[0].position = pos[0];
+		new_shapes[1].position = pos[1];
+		new_shapes[2].position = pos[2];
+	}
 
  	return new_shapes;
 }
@@ -643,6 +672,7 @@ fn main()
 	let mut level = 1;
 	let mut score = 0;
 	let mut score_multiplier = 1;
+	let mut high_score = 0;
 
 	let mut popup_texts = Vec::<PopupText>::new();
 
@@ -742,9 +772,21 @@ fn main()
 		}
 
 		// Clear screen.
-		renderer.set_draw_color(Color::RGBA(0, 0, 0, 16));
+		renderer.set_draw_color(Color::RGBA(0, 0, 0, 20));
 		renderer.set_blend_mode(BlendMode::Blend);
 		renderer.fill_rect(Rect::new(0, 0, WIDTH as u32, HEIGHT as u32));
+
+		// Draw noise.
+		{
+			renderer.set_draw_color(Color::RGBA(0, 255, 0, 32));
+			for idx in 0..4096
+			{
+				let x = rng.gen::<i32>() % WIDTH as i32;
+				let y = rng.gen::<i32>() % HEIGHT as i32;
+
+				renderer.draw_point(Point::new(x, y));
+			}
+		}
 
 		// Draw shapes.
 		for idx in 0..shapes.len()
@@ -776,6 +818,19 @@ fn main()
 				{
 				    idx = idx + 1;
 				}
+			}
+		}
+
+		// Draw scanlines.
+		{
+			renderer.set_draw_color(Color::RGBA(0, 0, 0, 64));
+			let mut y = 0.0;
+			while y < HEIGHT as f32
+			{
+
+				draw_line(&mut renderer, Vec2d::new(0.0, y), Vec2d::new(WIDTH as f32, y as f32));
+
+				y += 3.0;
 			}
 		}
 
