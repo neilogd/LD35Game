@@ -603,7 +603,7 @@ fn main()
 	let audio_ctx = ctx.audio().unwrap();
 
 	// Create window.
-	let window = match video_ctx.window("LD35Game", WIDTH as u32, HEIGHT as u32).position_centered().opengl().build()
+	let window = match video_ctx.window("Oscillomatch by NeiloGD", WIDTH as u32, HEIGHT as u32).position_centered().opengl().build()
 	{
 		Ok(window) => window,
 		Err(err) => panic!("Failed to create window: {}", err)
@@ -755,16 +755,14 @@ fn main()
 							file.unwrap().write_fmt(format_args!("{}", high_score));
 						}
 
-						let selected_shape_idx = rng.gen::<usize>() % 2;
 						let new_shapes = build_shapes(level);
-
+						let selected_shape_idx = rng.gen::<usize>() % new_shapes.len();
 						if shapes.len() == new_shapes.len()
 						{
 							for idx in 0..shapes.len()
 							{
 								shapes[idx].reset(&new_shapes[idx]);
 							}
-
 						}
 						else
 						{
