@@ -87,14 +87,15 @@ enum MixerChannel
 	Sine(f32, f32),
 	Square(f32, f32),
 	Sawtooth(f32, f32),
+	Beep(f32),
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 struct MixerChannelParams
 {
 	phase_inc: f32,
 	phase: f32,
-	volume: f32
+	volume: f32,
 }
 
 impl MixerChannelParams
@@ -114,8 +115,8 @@ struct MixerCallback
 {
 	freq: f32,
 	rx: Receiver<MixerChannel>,
-	channels: [MixerChannelParams; 3],
-	channel_targets: [MixerChannelParams; 3],
+	channels: [MixerChannelParams; 4],
+	channel_targets: [MixerChannelParams; 4],
 
 	time: f32,
 }
@@ -149,6 +150,12 @@ impl AudioCallback for MixerCallback
 							self.channel_targets[2].volume = v;
 							self.channel_targets[2].phase_inc = f / self.freq;
 						},
+						MixerChannel::Beep(f) =>
+						{
+							self.channel_targets[3].volume = 8.0;
+							self.channel_targets[3].phase_inc = f / self.freq;
+							self.channel_targets[3].phase = 0.0;
+						}
 					}
 				}
 				Err(_) => break 'running,
@@ -164,9 +171,14 @@ impl AudioCallback for MixerCallback
 
 				let sample = match idx
 				{
-					0 => sine_wave( self.channels[idx].phase ),
-					1 => square_wave( self.channels[idx].phase ),
-					2 => sawtooth_wave( self.channels[idx].phase ),
+					0 => sine_wave( self.channels[idx].phase ) * envelope(self.time, 8.0),
+					1 => square_wave( self.channels[idx].phase ) * envelope(self.time, 8.0),
+					2 => sawtooth_wave( self.channels[idx].phase ) * envelope(self.time, 8.0),
+					3 =>
+					{
+						self.channel_targets[idx].volume *= 0.995;
+						sine_wave( self.channels[idx].phase )
+					},
 					_ => 0.0,
 				};
 				out_val = out_val + self.channels[idx].volume * sample;				
@@ -176,8 +188,8 @@ impl AudioCallback for MixerCallback
 				self.channels[idx].volume = self.channels[idx].volume * 0.999 + self.channel_targets[idx].volume * 0.001;
 			}
 
-			*x = envelope(self.time, 8.0) * (out_val / 4.0);
-			self.time += 1.0 / self.freq;
+			*x = (out_val / 4.0);
+			self.time = (self.time + 1.0 / self.freq) % 8.0;
 		}
 	}
 }
@@ -237,6 +249,15 @@ impl Shape
 		return shape;
 	}
 
+	fn reset(&mut self, in_shape: &Shape)
+	{
+		self.position = in_shape.position;
+		self.channel_targets = in_shape.channel_targets.clone();
+		self.set_channels = in_shape.set_channels.clone();
+		self.is_selected = false;
+		self.update(0.0, 0.0);
+	}
+
 	fn set_target(&mut self, in_channels: [MixerChannel; 3])
 	{
 		let divisor = 440.0 / 8.0;
@@ -247,6 +268,7 @@ impl Shape
 				MixerChannel::Sine(f, v) => (f / divisor, v),
 				MixerChannel::Square(f, v) => (f / divisor, v),
 				MixerChannel::Sawtooth(f, v) => (f / divisor, v),
+				_ => (0.0, 0.0),
 			};
 
 			self.channel_targets[idx].phase_inc = phase_inc;
@@ -589,9 +611,11 @@ fn main()
 				MixerChannelParams::default(),
 				MixerChannelParams::default(),
 				MixerChannelParams::default(),
+				MixerChannelParams::default(),
 			],
 			channel_targets:
 			[
+				MixerChannelParams::default(),
 				MixerChannelParams::default(),
 				MixerChannelParams::default(),
 				MixerChannelParams::default(),
@@ -664,6 +688,8 @@ fn main()
 							score_multiplier = score_multiplier + 1;
 
 							popup_texts.push(PopupText::new(mouse_pos, 32.0, Color::RGB(0, 255, 0), 2.0, format!("+{}", add_score).to_string()));
+
+							audio_tx.send(MixerChannel::Beep(1670.0));
 						}
 						else 
 						{
@@ -680,12 +706,27 @@ fn main()
 							}
 							score_multiplier = 1;
 							popup_texts.push(PopupText::new(mouse_pos, 32.0, Color::RGB(255, 0, 0), 2.0, format!("-{}", sub_score).to_string()));
+
+							audio_tx.send(MixerChannel::Beep(110.0));
 						}
 
 						println!("Level: {}", level);
 
 						let selected_shape_idx = rng.gen::<usize>() % 2;
-						shapes = build_shapes(level);
+						let new_shapes = build_shapes(level);
+
+						if shapes.len() == new_shapes.len()
+						{
+							for idx in 0..shapes.len()
+							{
+								shapes[idx].reset(&new_shapes[idx]);
+							}
+
+						}
+						else
+						{
+							shapes = new_shapes;
+						}						
 						shapes[selected_shape_idx].play_audio(&audio_tx);
 					}
 				},
@@ -693,17 +734,19 @@ fn main()
 			}
 		}
 
-		// Clear screen.
-		renderer.set_draw_color(Color::RGBA(0, 0, 0, 16));
-		renderer.set_blend_mode(BlendMode::Blend);
-		renderer.fill_rect(Rect::new(0, 0, WIDTH as u32, HEIGHT as u32));
-				
+		// Update shapes.
 		for idx in 0..shapes.len()
 		{
 			let mut shape = &mut shapes[idx];
 			shape.update(tick, time);
 		}
 
+		// Clear screen.
+		renderer.set_draw_color(Color::RGBA(0, 0, 0, 16));
+		renderer.set_blend_mode(BlendMode::Blend);
+		renderer.fill_rect(Rect::new(0, 0, WIDTH as u32, HEIGHT as u32));
+
+		// Draw shapes.
 		for idx in 0..shapes.len()
 		{
 			let mut shape = &shapes[idx];
@@ -713,8 +756,10 @@ fn main()
 			shape.draw(&mut renderer, color);
 		}
 
+		// Draw score.
 		draw_string(&mut renderer, Vec2d::new(128.0, 128.0), 16.0, Color::RGB(0, 128, 0), &score.to_string());
 
+		// Draw popups.
 		{
 			let mut idx = 0 as usize;
 			'popup: loop
