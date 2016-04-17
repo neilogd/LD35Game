@@ -35,6 +35,11 @@ impl Vec2d
 	}
 }
 
+fn draw_line(renderer: &mut Renderer, a: Vec2d, b: Vec2d)
+{
+	renderer.draw_line(a.get_point(), b.get_point());
+}
+
 /////////////////////////////////////////////////////////////////////
 // waves
 fn sine_wave(x: f32) -> f32
@@ -65,6 +70,8 @@ struct Line
 	a: Vec2d,
 	b: Vec2d,
 }
+
+
 
 /////////////////////////////////////////////////////////////////////
 // Mixer
@@ -306,7 +313,7 @@ impl Shape
 			let idx_b = (idx_a + 1) % num_points;
 			let point_a = self.points[idx_a] + self.position;
 			let point_b = self.points[idx_b] + self.position;
-			renderer.draw_line(point_a.get_point(), point_b.get_point());
+			draw_line(renderer, point_a, point_b);
 		}
 	}
 }
@@ -338,6 +345,107 @@ fn build_shapes() -> Vec<Shape>
 	}
 
 	return shapes;
+}
+
+fn draw_char(renderer: &mut Renderer, position: Vec2d, scale: f32, color: Color, val: char)
+{
+	renderer.set_draw_color(color);
+	let mut lines = Vec::<Vec2d>::new();
+	match val
+	{
+		'0' =>
+		{
+			lines.append(&mut vec![Vec2d::new(0.0, 0.0), Vec2d::new(1.0, 0.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 0.0), Vec2d::new(1.0, 2.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 2.0), Vec2d::new(0.0, 2.0)]);
+			lines.append(&mut vec![Vec2d::new(0.0, 2.0), Vec2d::new(0.0, 0.0)]);
+		}
+		'1' =>
+		{
+			lines.append(&mut vec![Vec2d::new(1.0, 0.0), Vec2d::new(1.0, 2.0)]);
+		}
+		'2' =>
+		{
+			lines.append(&mut vec![Vec2d::new(0.0, 0.0), Vec2d::new(1.0, 0.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 0.0), Vec2d::new(1.0, 1.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 1.0), Vec2d::new(0.0, 1.0)]);
+			lines.append(&mut vec![Vec2d::new(0.0, 1.0), Vec2d::new(0.0, 2.0)]);
+			lines.append(&mut vec![Vec2d::new(0.0, 2.0), Vec2d::new(1.0, 2.0)]);
+		}
+		'3' =>
+		{
+			lines.append(&mut vec![Vec2d::new(0.0, 0.0), Vec2d::new(1.0, 0.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 0.0), Vec2d::new(1.0, 1.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 1.0), Vec2d::new(0.0, 1.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 1.0), Vec2d::new(1.0, 2.0)]);
+			lines.append(&mut vec![Vec2d::new(0.0, 2.0), Vec2d::new(1.0, 2.0)]);
+		}
+		'4' =>
+		{
+			lines.append(&mut vec![Vec2d::new(0.0, 0.0), Vec2d::new(0.0, 1.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 0.0), Vec2d::new(1.0, 1.0)]);
+			lines.append(&mut vec![Vec2d::new(0.0, 1.0), Vec2d::new(1.0, 1.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 1.0), Vec2d::new(1.0, 2.0)]);
+		}
+		'5' => {
+			lines.append(&mut vec![Vec2d::new(0.0, 0.0), Vec2d::new(1.0, 0.0)]);
+			lines.append(&mut vec![Vec2d::new(0.0, 0.0), Vec2d::new(0.0, 1.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 1.0), Vec2d::new(0.0, 1.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 1.0), Vec2d::new(1.0, 2.0)]);
+			lines.append(&mut vec![Vec2d::new(0.0, 2.0), Vec2d::new(1.0, 2.0)]);
+		}
+		'6' => {
+			lines.append(&mut vec![Vec2d::new(0.0, 0.0), Vec2d::new(0.0, 1.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 1.0), Vec2d::new(0.0, 1.0)]);
+			lines.append(&mut vec![Vec2d::new(0.0, 1.0), Vec2d::new(0.0, 2.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 1.0), Vec2d::new(1.0, 2.0)]);
+			lines.append(&mut vec![Vec2d::new(0.0, 2.0), Vec2d::new(1.0, 2.0)]);
+		}
+		'7' => {
+			lines.append(&mut vec![Vec2d::new(0.0, 0.0), Vec2d::new(1.0, 0.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 0.0), Vec2d::new(1.0, 2.0)]);
+		}
+		'8' => {
+			lines.append(&mut vec![Vec2d::new(0.0, 0.0), Vec2d::new(1.0, 0.0)]);
+			lines.append(&mut vec![Vec2d::new(0.0, 0.0), Vec2d::new(0.0, 2.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 1.0), Vec2d::new(0.0, 1.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 0.0), Vec2d::new(1.0, 2.0)]);
+			lines.append(&mut vec![Vec2d::new(0.0, 2.0), Vec2d::new(1.0, 2.0)]);
+		}
+		'9' => {
+			lines.append(&mut vec![Vec2d::new(0.0, 0.0), Vec2d::new(1.0, 0.0)]);
+			lines.append(&mut vec![Vec2d::new(0.0, 0.0), Vec2d::new(0.0, 1.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 0.0), Vec2d::new(1.0, 1.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 1.0), Vec2d::new(0.0, 1.0)]);
+			lines.append(&mut vec![Vec2d::new(1.0, 1.0), Vec2d::new(1.0, 2.0)]);
+		}
+		'X' => {
+			lines.append(&mut vec![Vec2d::new(0.0, 0.0), Vec2d::new(1.0, 2.0)]);
+			lines.append(&mut vec![Vec2d::new(0.0, 2.0), Vec2d::new(1.0, 0.0)]);
+		}
+		'+' => {
+			lines.append(&mut vec![Vec2d::new(0.5, 0.0), Vec2d::new(0.5, 2.0)]);
+			lines.append(&mut vec![Vec2d::new(0.0, 1.0), Vec2d::new(1.0, 1.0)]);
+		}
+		_ => {}
+	}
+
+	for idx in 0..(lines.len() / 2)
+	{
+		let point_a = lines[idx * 2] * scale;
+		let point_b = lines[idx * 2 + 1] * scale;
+		draw_line(renderer, position + point_a, position + point_b);
+	}
+}
+
+fn draw_string(renderer: &mut Renderer, position: Vec2d, scale: f32, color: Color, vals: String)
+{
+	let mut next_position = position;
+	for val in vals.chars()
+	{
+		draw_char(renderer, next_position, scale, color, val);
+		next_position = next_position + Vec2d::new(scale * 1.5, 0.0);
+	}
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -401,11 +509,12 @@ fn main()
 	let mut tick = 0.0;
 	let mut last_time = get_time_seconds();
 
+	let mut score = 0;
+	let mut score_multiplier = 1;
+
 	let mut shapes = Vec::<Shape>::new();
 	let mut mult = 1.0;
-
 	let mut mouse_pos = Vec2d::new(0.0, 0.0);
-
 	let mut rng = rand::thread_rng();
 	let selected_shape_idx = rng.gen::<usize>() % 3;
 	shapes = build_shapes();
@@ -439,11 +548,12 @@ fn main()
 					{
 						if shapes[selected_idx as usize].is_selected == true
 						{
-							println!("Yay!");
+							score = score + 10 * score_multiplier;
+							score_multiplier = score_multiplier + 1;
 						}
 						else 
 						{
-							println!("Nay!");
+							score_multiplier = 1;
 						}
 
 						let selected_shape_idx = rng.gen::<usize>() % 3;
@@ -474,6 +584,8 @@ fn main()
 			shape.draw(&mut renderer, color);
 		}
 
+		draw_string(&mut renderer, Vec2d::new(128.0, 128.0), 16.0, Color::RGB(0, 128, 0), score.to_string());
+
 		renderer.present();
 
 		// Timer handling.
@@ -483,4 +595,3 @@ fn main()
 		time = time + tick;
 	}
 }
-
