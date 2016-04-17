@@ -5,11 +5,8 @@ extern crate rand;
 use sdl2::audio::{AudioCallback, AudioDevice, AudioSpecDesired};
 use sdl2::pixels::Color;
 use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
 use sdl2::rect::{Point, Rect};
 use sdl2::render::{Renderer, BlendMode};
-
-use sdl2::AudioSubsystem;
 
 use std::sync::mpsc::{Sender, Receiver, channel};
 
@@ -67,15 +64,6 @@ fn envelope(x: f32, factor: f32) -> f32
 	let mod_x = x % 1.0;
 	return (factor * mod_x * (PI / (1.0 + (factor - 1.0) * mod_x))).sin();
 }
-
-/////////////////////////////////////////////////////////////////////
-// Line
-struct Line
-{
-	a: Vec2d,
-	b: Vec2d,
-}
-
 
 /////////////////////////////////////////////////////////////////////
 // Mixer
@@ -188,7 +176,7 @@ impl AudioCallback for MixerCallback
 				self.channels[idx].volume = self.channels[idx].volume * 0.999 + self.channel_targets[idx].volume * 0.001;
 			}
 
-			*x = (out_val / 4.0);
+			*x = out_val / 4.0;
 			self.time = (self.time + 1.0 / self.freq) % 8.0;
 		}
 	}
@@ -282,7 +270,6 @@ impl Shape
 	{
 		for idx in 0..3
 		{
-			//println!("{} {:?}", idx, self.set_channels[idx]);
 			audio_tx.send(self.set_channels[idx]);
 		}
 		self.is_selected = true;
@@ -723,9 +710,9 @@ fn main()
 						}
 						else 
 						{
-							let sub_score = score / 2;
+							let sub_score = (score * 1) / 4;
 							score = score - sub_score;
-							level = level / 2;
+							level = (level * 3) / 4;
 							if score < 0 
 							{
 								score = 0;
@@ -740,7 +727,10 @@ fn main()
 							audio_tx.send(MixerChannel::Beep(110.0));
 						}
 
-						println!("Level: {}", level);
+						if score > high_score
+						{
+							high_score = score;
+						}
 
 						let selected_shape_idx = rng.gen::<usize>() % 2;
 						let new_shapes = build_shapes(level);
@@ -799,6 +789,7 @@ fn main()
 		}
 
 		// Draw score.
+		draw_string(&mut renderer, Vec2d::new(128.0, 128.0 - 40.0), 16.0, Color::RGB(0, 128, 128), &high_score.to_string());
 		draw_string(&mut renderer, Vec2d::new(128.0, 128.0), 16.0, Color::RGB(0, 128, 0), &score.to_string());
 
 		// Draw popups.
@@ -823,7 +814,7 @@ fn main()
 
 		// Draw scanlines.
 		{
-			renderer.set_draw_color(Color::RGBA(0, 0, 0, 64));
+			renderer.set_draw_color(Color::RGBA(0, 0, 0, 32));
 			let mut y = 0.0;
 			while y < HEIGHT as f32
 			{
