@@ -428,6 +428,9 @@ fn draw_char(renderer: &mut Renderer, position: Vec2d, scale: f32, color: Color,
 			lines.append(&mut vec![Vec2d::new(0.5, 0.0), Vec2d::new(0.5, 2.0)]);
 			lines.append(&mut vec![Vec2d::new(0.0, 1.0), Vec2d::new(1.0, 1.0)]);
 		}
+		'-' => {
+			lines.append(&mut vec![Vec2d::new(0.0, 1.0), Vec2d::new(1.0, 1.0)]);
+		}
 		_ => {}
 	}
 
@@ -439,7 +442,7 @@ fn draw_char(renderer: &mut Renderer, position: Vec2d, scale: f32, color: Color,
 	}
 }
 
-fn draw_string(renderer: &mut Renderer, position: Vec2d, scale: f32, color: Color, vals: String)
+fn draw_string(renderer: &mut Renderer, position: Vec2d, scale: f32, color: Color, vals: &String)
 {
 	let mut next_position = position;
 	for val in vals.chars()
@@ -472,6 +475,14 @@ impl PopupText
 			time: in_time,
 			text: in_text,
 		}
+	}
+
+	fn draw(&mut self, renderer: &mut Renderer, tick: f32) -> bool
+	{
+		draw_string(renderer, self.position, self.scale, self.color, &self.text);
+		self.position = self.position - Vec2d::new(0.0, self.scale * 4.0) * tick;
+		self.time -= tick;
+		return self.time > 0.0;
 	}
 }
 
@@ -540,7 +551,7 @@ fn main()
 	let mut score = 0;
 	let mut score_multiplier = 1;
 
-	let mut popup_text = Vec::<PopupText>::new();
+	let mut popup_texts = Vec::<PopupText>::new();
 
 	let mut shapes = Vec::<Shape>::new();
 	let mut mult = 1.0;
@@ -578,12 +589,22 @@ fn main()
 					{
 						if shapes[selected_idx as usize].is_selected == true
 						{
-							score = score + 10 * score_multiplier;
+							let add_score = 10 * score_multiplier;
+							score = score + add_score;
 							score_multiplier = score_multiplier + 1;
+
+							popup_texts.push(PopupText::new(mouse_pos, 32.0, Color::RGB(0, 255, 0), 2.0, format!("+{}", add_score).to_string()));
 						}
 						else 
 						{
+							let sub_score = score / 2;
+							score = score - sub_score;
+							if score < 0 
+							{
+								score = 0;
+							}
 							score_multiplier = 1;
+							popup_texts.push(PopupText::new(mouse_pos, 32.0, Color::RGB(255, 0, 0), 2.0, format!("-{}", sub_score).to_string()));
 						}
 
 						let selected_shape_idx = rng.gen::<usize>() % 3;
@@ -615,7 +636,26 @@ fn main()
 			shape.draw(&mut renderer, color);
 		}
 
-		draw_string(&mut renderer, Vec2d::new(128.0, 128.0), 16.0, Color::RGB(0, 128, 0), score.to_string());
+		draw_string(&mut renderer, Vec2d::new(128.0, 128.0), 16.0, Color::RGB(0, 128, 0), &score.to_string());
+
+		{
+			let mut idx = 0 as usize;
+			'popup: loop
+			{
+				if idx >= popup_texts.len()
+				{
+					break 'popup
+				}
+				if !popup_texts[idx].draw(&mut renderer, tick)
+				{
+					popup_texts.remove(idx);
+				}
+				else
+				{
+				    idx = idx + 1;
+				}
+			}
+		}
 
 		renderer.present();
 
