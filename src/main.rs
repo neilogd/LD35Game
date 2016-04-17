@@ -203,7 +203,7 @@ struct Shape
 
 impl Shape
 {
-	fn new(in_position: &Vec2d, num_points: usize, in_channels: [MixerChannel; 3] ) -> Shape 
+	fn new(in_position: Vec2d, num_points: usize, in_channels: [MixerChannel; 3] ) -> Shape 
 	{
 		let mut shape = Shape
 		{
@@ -253,7 +253,7 @@ impl Shape
 	{
 		for idx in 0..3
 		{
-			println!("{} {:?}", idx, self.set_channels[idx]);
+			//println!("{} {:?}", idx, self.set_channels[idx]);
 			audio_tx.send(self.set_channels[idx]);
 		}
 		self.is_selected = true;
@@ -324,28 +324,87 @@ fn get_time_seconds() -> f32
 	precise_time_s() as f32
 }
 
-fn build_shapes() -> Vec<Shape>
+fn build_shapes(level: u32) -> Vec<Shape>
 {
 	let mut shapes = Vec::<Shape>::new();
+	let mut rng = rand::thread_rng();
 
 	let pos = &mut [
-		Vec2d::new(1.0 * WIDTH as f32 / 4.0, 2.0 * HEIGHT as f32 / 4.0),
-		Vec2d::new(2.0 * WIDTH as f32 / 4.0, 2.0 * HEIGHT as f32 / 4.0),
-		Vec2d::new(3.0 * WIDTH as f32 / 4.0, 2.0 * HEIGHT as f32 / 4.0),
+		Vec2d::new(1.0 * WIDTH as f32 / 3.0, 2.0 * HEIGHT as f32 / 4.0),
+		//Vec2d::new(2.0 * WIDTH as f32 / 4.0, 2.0 * HEIGHT as f32 / 4.0),
+		Vec2d::new(2.0 * WIDTH as f32 / 3.0, 2.0 * HEIGHT as f32 / 4.0),
 	];
 
-	for shape_idx in 0..3
+	if level >= 0 && level < 20
 	{
-		let channels = [
-			MixerChannel::Sine(440.0, if shape_idx == 0 { 0.5 } else { 0.0 } ),
-			MixerChannel::Square(440.0, if shape_idx == 1 { 0.5 } else { 0.0 } ),
-			MixerChannel::Sawtooth(440.0, if shape_idx == 2 { 0.5 } else { 0.0 } ),
-		];
+		for shape_idx in 0..3
+		{
+			let channels = [
+				MixerChannel::Sine(440.0, if shape_idx == 0 { 0.5 } else { 0.0 } ),
+				MixerChannel::Square(440.0, if shape_idx == 1 { 0.5 } else { 0.0 } ),
+				MixerChannel::Sawtooth(440.0, if shape_idx == 2 { 0.5 } else { 0.0 } ),
+			];
 
-		shapes.push(Shape::new(&pos[shape_idx], 1024, channels));
+			shapes.push(Shape::new(Vec2d::new(0.0, 0.0), 1024, channels));
+		}
 	}
 
-	return shapes;
+	if level >= 5
+	{
+		for shape_idx in 0..3
+		{
+			let channels = [
+				MixerChannel::Sine(880.0, if shape_idx == 0 { 0.5 } else { 0.0 } ),
+				MixerChannel::Square(880.0, if shape_idx == 1 { 0.5 } else { 0.0 } ),
+				MixerChannel::Sawtooth(880.0, if shape_idx == 2 { 0.5 } else { 0.0 } ),
+			];
+
+			shapes.push(Shape::new(Vec2d::new(0.0, 0.0), 1024, channels));
+		}
+	}
+
+	if level >= 10
+	{
+		for shape_idx in 0..3
+		{
+			let channels = [
+				MixerChannel::Sine(220.0, if shape_idx == 0 { 0.5 } else { 0.0 } ),
+				MixerChannel::Square(220.0, if shape_idx == 1 { 0.5 } else { 0.0 } ),
+				MixerChannel::Sawtooth(220.0, if shape_idx == 2 { 0.5 } else { 0.0 } ),
+			];
+
+			shapes.push(Shape::new(Vec2d::new(0.0, 0.0), 1024, channels));
+		}
+	}
+
+	if level >= 20
+	{
+		for shape_idx in 0..3
+		{
+			let channels = [
+				MixerChannel::Sine(440.0, if shape_idx != 0 { 0.5 } else { 0.0 } ),
+				MixerChannel::Square(440.0, if shape_idx != 1 { 0.5 } else { 0.0 } ),
+				MixerChannel::Sawtooth(440.0, if shape_idx != 2 { 0.5 } else { 0.0 } ),
+			];
+
+			shapes.push(Shape::new(Vec2d::new(0.0, 0.0), 1024, channels));
+		}
+	}
+		// Shuffle generated.
+	for idx in 0 ..shapes.len()
+	{
+		let swap_idx = rng.gen::<usize>() % shapes.len();
+		let val = shapes.swap_remove(swap_idx);
+		shapes.push(val);
+	}
+	let mut new_shapes = Vec::<Shape>::new();
+	new_shapes.push(shapes.swap_remove(0));
+	new_shapes.push(shapes.swap_remove(0));
+
+	new_shapes[0].position = pos[0];
+	new_shapes[1].position = pos[1];
+
+ 	return new_shapes;
 }
 
 fn draw_char(renderer: &mut Renderer, position: Vec2d, scale: f32, color: Color, val: char)
@@ -548,6 +607,7 @@ fn main()
 	let mut tick = 0.0;
 	let mut last_time = get_time_seconds();
 
+	let mut level = 1;
 	let mut score = 0;
 	let mut score_multiplier = 1;
 
@@ -557,8 +617,8 @@ fn main()
 	let mut mult = 1.0;
 	let mut mouse_pos = Vec2d::new(0.0, 0.0);
 	let mut rng = rand::thread_rng();
-	let selected_shape_idx = rng.gen::<usize>() % 3;
-	shapes = build_shapes();
+	let selected_shape_idx = rng.gen::<usize>() % 2;
+	shapes = build_shapes(level);
 	shapes[selected_shape_idx].play_audio(&audio_tx);
 
 	'running: loop
@@ -591,6 +651,7 @@ fn main()
 						{
 							let add_score = 10 * score_multiplier;
 							score = score + add_score;
+							level = level + 1;
 							score_multiplier = score_multiplier + 1;
 
 							popup_texts.push(PopupText::new(mouse_pos, 32.0, Color::RGB(0, 255, 0), 2.0, format!("+{}", add_score).to_string()));
@@ -599,16 +660,23 @@ fn main()
 						{
 							let sub_score = score / 2;
 							score = score - sub_score;
+							level = level / 2;
 							if score < 0 
 							{
 								score = 0;
+							}
+							if level < 1
+							{
+								level = 1;
 							}
 							score_multiplier = 1;
 							popup_texts.push(PopupText::new(mouse_pos, 32.0, Color::RGB(255, 0, 0), 2.0, format!("-{}", sub_score).to_string()));
 						}
 
-						let selected_shape_idx = rng.gen::<usize>() % 3;
-						shapes = build_shapes();
+						println!("Level: {}", level);
+
+						let selected_shape_idx = rng.gen::<usize>() % 2;
+						shapes = build_shapes(level);
 						shapes[selected_shape_idx].play_audio(&audio_tx);
 					}
 				},
