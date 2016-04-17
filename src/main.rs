@@ -61,7 +61,7 @@ fn triangle_wave(x: f32) -> f32
 
 fn sawtooth_wave(x: f32) -> f32
 {
-	return x;
+	return x % 1.0;
 }
 
 
@@ -77,6 +77,7 @@ struct Line
 // Mixer
 type MixerFunc = Fn(f32) -> f32;
 
+#[derive(Copy, Clone)]
 enum MixerChannel
 {
 	Sine(f32, f32),
@@ -85,6 +86,7 @@ enum MixerChannel
 	Sawtooth(f32, f32),
 }
 
+#[derive(Clone)]
 struct MixerChannelParams
 {
 	phase_inc: f32,
@@ -128,25 +130,21 @@ impl AudioCallback for MixerCallback
 				{
 					MixerChannel::Sine(f, v) =>
 					{
-						println!("Sine {}, {}", f, v);
 						self.channel_targets[0].phase_inc = f / self.freq;
 						self.channel_targets[0].volume = v;
 					},
 					MixerChannel::Square(f, v) =>
 					{
-						println!("Square {}, {}", f, v);
 						self.channel_targets[1].phase_inc = f / self.freq;
 						self.channel_targets[1].volume = v;
 					},
 					MixerChannel::Triangle(f, v) =>
 					{
-						println!("Triangle {}, {}", f, v);
 						self.channel_targets[2].phase_inc = f / self.freq;
 						self.channel_targets[2].volume = v;
 					},
 					MixerChannel::Sawtooth(f, v) =>
 					{
-						println!("Sawtooth {}, {}", f, v);
 						self.channel_targets[3].volume = v;
 						self.channel_targets[3].phase_inc = f / self.freq;
 					},
@@ -177,7 +175,7 @@ impl AudioCallback for MixerCallback
 				self.channels[idx].volume = self.channels[idx].volume * 0.999 + self.channel_targets[idx].volume * 0.001;
 			}
 
-			*x = out_val;
+			*x = out_val / 4.0;
 		}
 	}
 }
@@ -197,12 +195,10 @@ struct Shape
 	position: Vec2d,
 	// Points for shape.
 	points: Vec<Vec2d>,
-	// Functions to update points given a 0.0-1.0 for where in shape, time, and morph.
-	point_fns: [ Option<Box<PointFunc>>; 2 ],
-	// Current function.
-	curr_fn_idx: usize,
-	// Shape blend parameter.
-	morph: f32,
+	// Channels for shape.
+	channels: [MixerChannelParams; 4],
+	// Channel targets for shape.
+	channel_targets: [MixerChannelParams; 4],
 	// Sender for playing audio.
 	audio_tx: Sender<MixerChannel>,
 }
@@ -210,72 +206,98 @@ struct Shape
 impl Shape
 {
 	fn new(
-		in_audio_tx: &Sender<MixerChannel>, in_position: &Vec2d, num_points: usize, in_point_fn: Box<PointFunc>) -> Shape 
+		in_audio_tx: &Sender<MixerChannel>, in_position: &Vec2d, num_points: usize, in_channels: [MixerChannel; 4] ) -> Shape 
 	{
 		let mut shape = Shape
 		{
 			position: Vec2d::new(in_position.x, in_position.y),
 			points: Vec::with_capacity(num_points),
-			point_fns: [ Some(in_point_fn), Option::None ],
-			curr_fn_idx: 0,
-			morph: 0.0,
+			channels:
+			[
+				MixerChannelParams::default(),
+				MixerChannelParams::default(),
+				MixerChannelParams::default(),
+				MixerChannelParams::default(),
+			],
+			channel_targets:
+			[
+				MixerChannelParams::default(),
+				MixerChannelParams::default(),
+				MixerChannelParams::default(),
+				MixerChannelParams::default(),
+			],
 			audio_tx: in_audio_tx.clone(),
 		};
 		shape.points.resize(num_points, Vec2d::new(0.0, 0.0));
 		shape.update(0.0, 0.0);
+		shape.set_target(in_channels);
 		return shape;
+	}
+
+	fn set_target(&mut self, in_channels: [MixerChannel; 4])
+	{
+		let divisor = 440.0 / 8.0;
+		for idx in 0..in_channels.len()
+		{
+			let (phase_inc, volume) = match in_channels[idx]
+			{
+				MixerChannel::Sine(f, v) => (f / divisor, v),
+				MixerChannel::Square(f, v) => (f / divisor, v),
+				MixerChannel::Triangle(f, v) => (f / divisor, v),
+				MixerChannel::Sawtooth(f, v) => (f / divisor, v),
+			};
+
+			self.channel_targets[idx].phase_inc = phase_inc;
+			self.channel_targets[idx].volume = volume;
+		}
+		
+	}
+
+	fn sample_channels(&self, x: f32, t: f32) -> Vec2d
+	{
+		let size = 128.0;
+		let rot = (x + t * 0.125) * PI * 2.0;
+		let offset = Vec2d::new(rot.cos(), rot.sin());
+
+		let mut out_sample = 0.0;
+
+		let scale_rot = x;
+		for idx in 0..self.channels.len()
+		{
+			let channel = &self.channels[idx];
+			let sample = match idx
+			{
+				0 => sine_wave(scale_rot * channel.phase_inc) * channel.volume,
+				1 => square_wave(scale_rot * channel.phase_inc) * channel.volume,
+				2 => triangle_wave(scale_rot * channel.phase_inc) * channel.volume,
+				3 => sawtooth_wave(scale_rot * channel.phase_inc) * channel.volume,
+				_ => 0.0,
+			};
+
+			out_sample += sample;
+		}
+		
+		let scale = size * (out_sample / 3.0 + 1.0);
+		return offset * scale;
 	}
 
 	fn update(&mut self, tick: f32, time: f32)
 	{
+		for idx in 0..self.channels.len()
+		{
+			self.channels[idx].phase_inc = self.channels[idx].phase_inc * 0.95 + self.channel_targets[idx].phase_inc * 0.05;
+			self.channels[idx].volume = self.channels[idx].volume * 0.95 + self.channel_targets[idx].volume * 0.05;
+		}
+
 		let num_points = self.points.len();
 		let mul_val = 1.0 / num_points as f32;
 		{
-			let curr_point_fn_opt = &self.point_fns[self.curr_fn_idx];
-			let next_point_fn_opt = &self.point_fns[1 - self.curr_fn_idx];
-
 			for idx in 0..num_points
 			{
-				let point_a : Vec2d;
-
-				match curr_point_fn_opt.as_ref()
-				{
-					Some(curr_point_fn) => 
-					{
-						point_a = (*curr_point_fn)(idx as f32 * mul_val, time);
-					},
-					None => panic!("No curr_point_fn")
-				}
-
-				match next_point_fn_opt.as_ref()
-				{
-					Some(next_point_fn) => 
-					{
-						let point_b = (*next_point_fn)(idx as f32 * mul_val, time);
-						self.points[idx] = (point_b * self.morph) + (point_a * (1.0 - self.morph));
-					},
-					None => self.points[idx] = point_a
-				}
-			}
-
-			if next_point_fn_opt.is_some()
-			{
-				self.morph += tick;
+				let point_a = self.sample_channels(idx as f32 * mul_val, time);
+				self.points[idx] = point_a;
 			}
 		}
-
-		if self.morph > 1.0
-		{
-			self.point_fns[self.curr_fn_idx] = None;
-			self.morph = 0.0;
-			self.curr_fn_idx = 1 - self.curr_fn_idx;
-		}
-	}
-
-	fn set_next(&mut self, point_fn: Box<PointFunc>)
-	{
-		self.point_fns[1 - self.curr_fn_idx] = Some(point_fn);
-		self.morph = 0.0;
 	}
 
 	fn draw(&self, renderer: &mut Renderer)
@@ -295,60 +317,6 @@ impl Shape
 fn get_time_seconds() -> f32
 {
 	precise_time_s() as f32
-}
-
-fn make_flat_wave_shape_function(size: f32, points: u32) -> Box<PointFunc>
-{
-	let update_fn = move |x: f32, t: f32| -> Vec2d
-	{
-		let rot = (x) * PI * 2.0;
-		let offset = Vec2d::new(rot.cos(), rot.sin());
-		return offset * size;
-	};
-
-	return Box::new(update_fn);
-}
-
-fn make_sine_wave_shape_function(size: f32, points: u32) -> Box<PointFunc>
-{
-	let update_fn = move |x: f32, t: f32| -> Vec2d
-	{
-		let rot = (x + t * 0.1) * PI * 2.0;
-		let offset = Vec2d::new(rot.cos(), rot.sin());
-		let scale_rot = x * points as f32;
-		let scale = size * ((sine_wave(scale_rot) + 1.0) / 2.0 + 1.0);
-		return offset * scale;
-	};
-
-	return Box::new(update_fn);
-}
-
-fn make_triangle_wave_shape_function(size: f32, points: u32) -> Box<PointFunc>
-{
-	let update_fn = move |x: f32, t: f32| -> Vec2d
-	{
-		let rot = (x + t * 0.1) * PI * 2.0;
-		let offset = Vec2d::new(rot.cos(), rot.sin());
-		let scale_rot = x * points as f32;
-		let scale = size * (triangle_wave(scale_rot) / 2.0 + 1.0);
-		return offset * scale;
-	};
-
-	return Box::new(update_fn);
-}
-
-fn make_square_wave_shape_function(size: f32, points: u32) -> Box<PointFunc>
-{
-	let update_fn = move |x: f32, t: f32| -> Vec2d
-	{
-		let rot = (x + t * 0.1) * PI * 2.0;
-		let offset = Vec2d::new(rot.cos(), rot.sin());
-		let scale_rot = x * points as f32;
-		let scale = size * (square_wave(scale_rot) / 2.0 + 1.0);
-		return offset * scale;
-	};
-
-	return Box::new(update_fn);
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -399,7 +367,6 @@ fn main()
 	}).unwrap();
 	audio.resume();
 
-
 	let mut renderer = window.renderer().build().unwrap();
 
 	renderer.set_draw_color(Color::RGB(0, 0, 0));
@@ -410,8 +377,8 @@ fn main()
 
 	let mut position = Vec2d::new(WIDTH as f32, HEIGHT as f32) * 0.5;
 
-	let mut time = 0.0f32;
-	let mut tick = 0.0f32;
+	let mut time = 0.0;
+	let mut tick = 0.0;
 	let mut lastTime = get_time_seconds();
 
 	let mut shapes = Vec::<Shape>::new();
@@ -421,16 +388,7 @@ fn main()
 	let pos2 = Vec2d::new(1.0 * WIDTH as f32 / 4.0, 3.0 * HEIGHT as f32 / 4.0);
 	let pos3 = Vec2d::new(3.0 * WIDTH as f32 / 4.0, 3.0 * HEIGHT as f32 / 4.0);
 
-
-	shapes.push(Shape::new(&audio_tx, &pos0, 64, make_flat_wave_shape_function(96.0, 8)));
-	shapes.push(Shape::new(&audio_tx, &pos1, 64, make_sine_wave_shape_function(96.0, 8)));
-	shapes.push(Shape::new(&audio_tx, &pos2, 64, make_triangle_wave_shape_function(96.0, 8)));
-	shapes.push(Shape::new(&audio_tx, &pos3, 64, make_square_wave_shape_function(96.0, 8)));
-
-	audio_tx.send(MixerChannel::Sine(440.0, 0.1));
-	audio_tx.send(MixerChannel::Square(440.0, 0.1));
-
-	let mut blend = 0.0;
+	let mut mult = 1.0;
 
 	'running: loop
 	{
@@ -439,10 +397,29 @@ fn main()
 			match event
 			{
 				Event::Quit {..} => break 'running,
-				Event::KeyDown { keycode: Some(Keycode::Up), .. } => blend = blend + 0.1,
-				Event::KeyDown { keycode: Some(Keycode::Down), .. } => blend = blend - 0.1,
-				Event::KeyDown { keycode: Some(Keycode::Left), .. } => shapes[0].set_next(make_sine_wave_shape_function(96.0, 8)),
-				Event::KeyDown { keycode: Some(Keycode::Right), .. } => shapes[0].set_next(make_square_wave_shape_function(96.0, 8)),
+				Event::KeyDown { keycode: Some(Keycode::Up), .. } => mult = mult * 2.0,
+				Event::KeyDown { keycode: Some(Keycode::Down), .. } => mult = mult / 2.0,
+				Event::KeyDown { keycode: Some(Keycode::Left), .. } => 
+				{
+					let channels =
+					[
+						MixerChannel::Sine(440.0 * mult, 0.0),
+						MixerChannel::Square(440.0 * mult, 0.0),
+						MixerChannel::Triangle(440.0 * mult, 0.0),
+						MixerChannel::Sawtooth(440.0 * mult, 1.0),
+					];
+
+					shapes.clear();
+					shapes.push(Shape::new(&audio_tx, &pos0, 1024, channels.clone()));
+					for idx in 0..channels.len()
+					{
+						audio_tx.send(channels[idx]);	
+					}
+				},
+				Event::KeyDown { keycode: Some(Keycode::Right), .. } => 
+				{
+
+				},
 				_ => {},
 			}
 		}
