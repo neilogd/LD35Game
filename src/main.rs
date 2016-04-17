@@ -62,6 +62,11 @@ fn sawtooth_wave(x: f32) -> f32
 	return (x % 1.0) * 2.0 - 1.0;
 }
 
+fn envelope(x: f32, factor: f32) -> f32
+{
+	let mod_x = x % 1.0;
+	return (factor * mod_x * (PI / (1.0 + (factor - 1.0) * mod_x))).sin();
+}
 
 /////////////////////////////////////////////////////////////////////
 // Line
@@ -70,7 +75,6 @@ struct Line
 	a: Vec2d,
 	b: Vec2d,
 }
-
 
 
 /////////////////////////////////////////////////////////////////////
@@ -112,6 +116,8 @@ struct MixerCallback
 	rx: Receiver<MixerChannel>,
 	channels: [MixerChannelParams; 3],
 	channel_targets: [MixerChannelParams; 3],
+
+	time: f32,
 }
 
 impl AudioCallback for MixerCallback
@@ -170,7 +176,8 @@ impl AudioCallback for MixerCallback
 				self.channels[idx].volume = self.channels[idx].volume * 0.999 + self.channel_targets[idx].volume * 0.001;
 			}
 
-			*x = out_val / 4.0;
+			*x = envelope(self.time, 8.0) * (out_val / 4.0);
+			self.time += 1.0 / self.freq;
 		}
 	}
 }
@@ -335,7 +342,7 @@ fn build_shapes(level: u32) -> Vec<Shape>
 		Vec2d::new(2.0 * WIDTH as f32 / 3.0, 2.0 * HEIGHT as f32 / 4.0),
 	];
 
-	if level >= 0 && level < 20
+	if level >= 0
 	{
 		for shape_idx in 0..3
 		{
@@ -376,8 +383,9 @@ fn build_shapes(level: u32) -> Vec<Shape>
 			shapes.push(Shape::new(Vec2d::new(0.0, 0.0), 1024, channels));
 		}
 	}
+	
 
-	if level >= 20
+	if level >= 30
 	{
 		for shape_idx in 0..3
 		{
@@ -588,6 +596,7 @@ fn main()
 				MixerChannelParams::default(),
 				MixerChannelParams::default(),
 			],
+			time: 0.0,
 		}
 	}).unwrap();
 	audio.resume();
