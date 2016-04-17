@@ -6,8 +6,8 @@ use sdl2::audio::{AudioCallback, AudioDevice, AudioSpecDesired};
 use sdl2::pixels::Color;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use sdl2::rect::Point;
-use sdl2::render::Renderer;
+use sdl2::rect::{Point, Rect};
+use sdl2::render::{Renderer, BlendMode};
 
 use sdl2::AudioSubsystem;
 
@@ -199,6 +199,7 @@ struct Shape
 	// Is selected shape?
 	is_selected: bool,
 }
+
 
 impl Shape
 {
@@ -449,6 +450,33 @@ fn draw_string(renderer: &mut Renderer, position: Vec2d, scale: f32, color: Colo
 }
 
 /////////////////////////////////////////////////////////////////////
+// Popup text
+struct PopupText
+{
+	position: Vec2d,
+	scale: f32,
+	color: Color,
+	time: f32,
+	text: String,
+}
+
+impl PopupText
+{
+	fn new(in_position: Vec2d, in_scale: f32, in_color: Color, in_time: f32, in_text: String) -> PopupText
+	{
+		PopupText
+		{
+			position: in_position,
+			scale: in_scale,
+			color: in_color,
+			time: in_time,
+			text: in_text,
+		}
+	}
+}
+
+
+/////////////////////////////////////////////////////////////////////
 // main
 fn main()
 {
@@ -512,6 +540,8 @@ fn main()
 	let mut score = 0;
 	let mut score_multiplier = 1;
 
+	let mut popup_text = Vec::<PopupText>::new();
+
 	let mut shapes = Vec::<Shape>::new();
 	let mut mult = 1.0;
 	let mut mouse_pos = Vec2d::new(0.0, 0.0);
@@ -566,9 +596,10 @@ fn main()
 		}
 
 		// Clear screen.
-		renderer.set_draw_color(Color::RGB(0, 0, 0));
-		renderer.clear();
-		
+		renderer.set_draw_color(Color::RGBA(0, 0, 0, 16));
+		renderer.set_blend_mode(BlendMode::Blend);
+		renderer.fill_rect(Rect::new(0, 0, WIDTH as u32, HEIGHT as u32));
+				
 		for idx in 0..shapes.len()
 		{
 			let mut shape = &mut shapes[idx];
