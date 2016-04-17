@@ -1,5 +1,6 @@
 extern crate sdl2;
 extern crate time;
+extern crate rand;
 
 use sdl2::audio::{AudioCallback, AudioDevice, AudioSpecDesired};
 use sdl2::pixels::Color;
@@ -17,9 +18,11 @@ pub mod math;
 use math::*;
 use std::f32::consts::{PI};
 use time::*;
+use rand::Rng;
 
 const WIDTH: i32 = 1024;
 const HEIGHT: i32 = 768;
+const SIZE: f32 = 96.0;
 
 
 /////////////////////////////////////////////////////////////////////
@@ -42,26 +45,16 @@ fn sine_wave(x: f32) -> f32
 fn square_wave(x: f32) -> f32
 {
 	let mod_x = (x * 2.0) % 2.0;
-	if mod_x < 1.0
+	if mod_x > 1.0
 	{
-		return 0.0;
+		return -1.0;
 	}
 	return 1.0;
 }
 
-fn triangle_wave(x: f32) -> f32
-{
-	let mod_x = (x * 2.0) % 2.0;
-	if mod_x < 1.0
-	{
-		return mod_x;
-	}
-	return 1.0 - (mod_x - 1.0);
-}
-
 fn sawtooth_wave(x: f32) -> f32
 {
-	return x % 1.0;
+	return (x % 1.0) * 2.0 - 1.0;
 }
 
 
@@ -77,12 +70,11 @@ struct Line
 // Mixer
 type MixerFunc = Fn(f32) -> f32;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 enum MixerChannel
 {
 	Sine(f32, f32),
 	Square(f32, f32),
-	Triangle(f32, f32),
 	Sawtooth(f32, f32),
 }
 
@@ -111,8 +103,8 @@ struct MixerCallback
 {
 	freq: f32,
 	rx: Receiver<MixerChannel>,
-	channels: [MixerChannelParams; 4],
-	channel_targets: [MixerChannelParams; 4],
+	channels: [MixerChannelParams; 3],
+	channel_targets: [MixerChannelParams; 3],
 }
 
 impl AudioCallback for MixerCallback
@@ -120,37 +112,34 @@ impl AudioCallback for MixerCallback
 	type Channel = f32;
 	fn callback(&mut self, out: &mut [f32])
 	{
-		let result = self.rx.try_recv();
-
-		match result
+		'running: loop
 		{
-			Ok(channel) => 
+			let result = self.rx.try_recv();
+			match result
 			{
-				match channel
+				Ok(channel) => 
 				{
-					MixerChannel::Sine(f, v) =>
+					match channel
 					{
-						self.channel_targets[0].phase_inc = f / self.freq;
-						self.channel_targets[0].volume = v;
-					},
-					MixerChannel::Square(f, v) =>
-					{
-						self.channel_targets[1].phase_inc = f / self.freq;
-						self.channel_targets[1].volume = v;
-					},
-					MixerChannel::Triangle(f, v) =>
-					{
-						self.channel_targets[2].phase_inc = f / self.freq;
-						self.channel_targets[2].volume = v;
-					},
-					MixerChannel::Sawtooth(f, v) =>
-					{
-						self.channel_targets[3].volume = v;
-						self.channel_targets[3].phase_inc = f / self.freq;
-					},
+						MixerChannel::Sine(f, v) =>
+						{
+							self.channel_targets[0].phase_inc = f / self.freq;
+							self.channel_targets[0].volume = v;
+						},
+						MixerChannel::Square(f, v) =>
+						{
+							self.channel_targets[1].phase_inc = f / self.freq;
+							self.channel_targets[1].volume = v;
+						},
+						MixerChannel::Sawtooth(f, v) =>
+						{
+							self.channel_targets[2].volume = v;
+							self.channel_targets[2].phase_inc = f / self.freq;
+						},
+					}
 				}
+				Err(_) => break 'running,
 			}
-			Err(_) => {}
 		}
 
 		for x in out.iter_mut()
@@ -164,8 +153,7 @@ impl AudioCallback for MixerCallback
 				{
 					0 => sine_wave( self.channels[idx].phase ),
 					1 => square_wave( self.channels[idx].phase ),
-					2 => triangle_wave( self.channels[idx].phase ),
-					3 => sawtooth_wave( self.channels[idx].phase ),
+					2 => sawtooth_wave( self.channels[idx].phase ),
 					_ => 0.0,
 				};
 				out_val = out_val + self.channels[idx].volume * sample;				
@@ -195,18 +183,19 @@ struct Shape
 	position: Vec2d,
 	// Points for shape.
 	points: Vec<Vec2d>,
+	// Channels that have been set.
+	set_channels: [MixerChannel; 3],
 	// Channels for shape.
-	channels: [MixerChannelParams; 4],
+	channels: [MixerChannelParams; 3],
 	// Channel targets for shape.
-	channel_targets: [MixerChannelParams; 4],
-	// Sender for playing audio.
-	audio_tx: Sender<MixerChannel>,
+	channel_targets: [MixerChannelParams; 3],
+	// Is selected shape?
+	is_selected: bool,
 }
 
 impl Shape
 {
-	fn new(
-		in_audio_tx: &Sender<MixerChannel>, in_position: &Vec2d, num_points: usize, in_channels: [MixerChannel; 4] ) -> Shape 
+	fn new(in_position: &Vec2d, num_points: usize, in_channels: [MixerChannel; 3] ) -> Shape 
 	{
 		let mut shape = Shape
 		{
@@ -217,16 +206,15 @@ impl Shape
 				MixerChannelParams::default(),
 				MixerChannelParams::default(),
 				MixerChannelParams::default(),
-				MixerChannelParams::default(),
 			],
 			channel_targets:
 			[
 				MixerChannelParams::default(),
 				MixerChannelParams::default(),
 				MixerChannelParams::default(),
-				MixerChannelParams::default(),
 			],
-			audio_tx: in_audio_tx.clone(),
+			set_channels: in_channels.clone(),
+			is_selected: false,
 		};
 		shape.points.resize(num_points, Vec2d::new(0.0, 0.0));
 		shape.update(0.0, 0.0);
@@ -234,7 +222,7 @@ impl Shape
 		return shape;
 	}
 
-	fn set_target(&mut self, in_channels: [MixerChannel; 4])
+	fn set_target(&mut self, in_channels: [MixerChannel; 3])
 	{
 		let divisor = 440.0 / 8.0;
 		for idx in 0..in_channels.len()
@@ -243,19 +231,29 @@ impl Shape
 			{
 				MixerChannel::Sine(f, v) => (f / divisor, v),
 				MixerChannel::Square(f, v) => (f / divisor, v),
-				MixerChannel::Triangle(f, v) => (f / divisor, v),
 				MixerChannel::Sawtooth(f, v) => (f / divisor, v),
 			};
 
 			self.channel_targets[idx].phase_inc = phase_inc;
 			self.channel_targets[idx].volume = volume;
 		}
-		
+
+		self.set_channels = in_channels;
 	}
 
+	fn play_audio(&mut self, audio_tx: &Sender<MixerChannel>)
+	{
+		for idx in 0..3
+		{
+			println!("{} {:?}", idx, self.set_channels[idx]);
+			audio_tx.send(self.set_channels[idx]);
+		}
+		self.is_selected = true;
+	}
+	
 	fn sample_channels(&self, x: f32, t: f32) -> Vec2d
 	{
-		let size = 128.0;
+		let size = SIZE;
 		let rot = (x + t * 0.125) * PI * 2.0;
 		let offset = Vec2d::new(rot.cos(), rot.sin());
 
@@ -269,8 +267,7 @@ impl Shape
 			{
 				0 => sine_wave(scale_rot * channel.phase_inc) * channel.volume,
 				1 => square_wave(scale_rot * channel.phase_inc) * channel.volume,
-				2 => triangle_wave(scale_rot * channel.phase_inc) * channel.volume,
-				3 => sawtooth_wave(scale_rot * channel.phase_inc) * channel.volume,
+				2 => sawtooth_wave(scale_rot * channel.phase_inc) * channel.volume,
 				_ => 0.0,
 			};
 
@@ -300,9 +297,9 @@ impl Shape
 		}
 	}
 
-	fn draw(&self, renderer: &mut Renderer)
+	fn draw(&self, renderer: &mut Renderer, color: Color)
 	{
-		renderer.set_draw_color(Color::RGB(0, 192, 0));
+		renderer.set_draw_color(color);
 		let num_points = self.points.len();
 		for idx_a in 0..num_points
 		{
@@ -319,6 +316,30 @@ fn get_time_seconds() -> f32
 	precise_time_s() as f32
 }
 
+fn build_shapes() -> Vec<Shape>
+{
+	let mut shapes = Vec::<Shape>::new();
+
+	let pos = &mut [
+		Vec2d::new(1.0 * WIDTH as f32 / 4.0, 2.0 * HEIGHT as f32 / 4.0),
+		Vec2d::new(2.0 * WIDTH as f32 / 4.0, 2.0 * HEIGHT as f32 / 4.0),
+		Vec2d::new(3.0 * WIDTH as f32 / 4.0, 2.0 * HEIGHT as f32 / 4.0),
+	];
+
+	for shape_idx in 0..3
+	{
+		let channels = [
+			MixerChannel::Sine(440.0, if shape_idx == 0 { 0.5 } else { 0.0 } ),
+			MixerChannel::Square(440.0, if shape_idx == 1 { 0.5 } else { 0.0 } ),
+			MixerChannel::Sawtooth(440.0, if shape_idx == 2 { 0.5 } else { 0.0 } ),
+		];
+
+		shapes.push(Shape::new(&pos[shape_idx], 1024, channels));
+	}
+
+	return shapes;
+}
+
 /////////////////////////////////////////////////////////////////////
 // main
 fn main()
@@ -327,19 +348,20 @@ fn main()
 	let video_ctx = ctx.video().unwrap();
 	let audio_ctx = ctx.audio().unwrap();
 
+	// Create window.
 	let window = match video_ctx.window("LD35Game", WIDTH as u32, HEIGHT as u32).position_centered().opengl().build()
 	{
 		Ok(window) => window,
 		Err(err) => panic!("Failed to create window: {}", err)
 	};
 
+	// Setup audio.
 	let audio_spec = AudioSpecDesired
 	{
 		freq: Some(44100),
 		channels: Some(1),
 		samples: None
 	};
-
 	let (audio_tx, audio_rx) = channel();
 
 	let audio = audio_ctx.open_playback(None, &audio_spec, |spec|
@@ -353,20 +375,18 @@ fn main()
 				MixerChannelParams::default(),
 				MixerChannelParams::default(),
 				MixerChannelParams::default(),
-				MixerChannelParams::default(),
 			],
 			channel_targets:
 			[
 				MixerChannelParams::default(),
 				MixerChannelParams::default(),
 				MixerChannelParams::default(),
-				MixerChannelParams::default(),
 			],
-
 		}
 	}).unwrap();
 	audio.resume();
 
+	// Setup renderer.
 	let mut renderer = window.renderer().build().unwrap();
 
 	renderer.set_draw_color(Color::RGB(0, 0, 0));
@@ -379,16 +399,17 @@ fn main()
 
 	let mut time = 0.0;
 	let mut tick = 0.0;
-	let mut lastTime = get_time_seconds();
+	let mut last_time = get_time_seconds();
 
 	let mut shapes = Vec::<Shape>::new();
-
-	let pos0 = Vec2d::new(1.0 * WIDTH as f32 / 4.0, 1.0 * HEIGHT as f32 / 4.0);
-	let pos1 = Vec2d::new(3.0 * WIDTH as f32 / 4.0, 1.0 * HEIGHT as f32 / 4.0);
-	let pos2 = Vec2d::new(1.0 * WIDTH as f32 / 4.0, 3.0 * HEIGHT as f32 / 4.0);
-	let pos3 = Vec2d::new(3.0 * WIDTH as f32 / 4.0, 3.0 * HEIGHT as f32 / 4.0);
-
 	let mut mult = 1.0;
+
+	let mut mouse_pos = Vec2d::new(0.0, 0.0);
+
+	let mut rng = rand::thread_rng();
+	let selected_shape_idx = rng.gen::<usize>() % 3;
+	shapes = build_shapes();
+	shapes[selected_shape_idx].play_audio(&audio_tx);
 
 	'running: loop
 	{
@@ -397,28 +418,38 @@ fn main()
 			match event
 			{
 				Event::Quit {..} => break 'running,
-				Event::KeyDown { keycode: Some(Keycode::Up), .. } => mult = mult * 2.0,
-				Event::KeyDown { keycode: Some(Keycode::Down), .. } => mult = mult / 2.0,
-				Event::KeyDown { keycode: Some(Keycode::Left), .. } => 
+				Event::MouseMotion { x, y, .. } => 
 				{
-					let channels =
-					[
-						MixerChannel::Sine(440.0 * mult, 0.0),
-						MixerChannel::Square(440.0 * mult, 0.0),
-						MixerChannel::Triangle(440.0 * mult, 0.0),
-						MixerChannel::Sawtooth(440.0 * mult, 1.0),
-					];
-
-					shapes.clear();
-					shapes.push(Shape::new(&audio_tx, &pos0, 1024, channels.clone()));
-					for idx in 0..channels.len()
-					{
-						audio_tx.send(channels[idx]);	
-					}
+					mouse_pos = Vec2d::new(x as f32, y as f32);
 				},
-				Event::KeyDown { keycode: Some(Keycode::Right), .. } => 
+				Event::MouseButtonDown { x, y, .. } =>
 				{
+					mouse_pos = Vec2d::new(x as f32, y as f32);
+					let mut selected_idx = -1;
+					for idx in 0..shapes.len()
+					{
+						let mut shape = &mut shapes[idx];
+						if (mouse_pos - shape.position).magnitude() < SIZE
+						{
+							selected_idx = idx as i32;
+						}
+					}
 
+					if selected_idx != -1
+					{
+						if shapes[selected_idx as usize].is_selected == true
+						{
+							println!("Yay!");
+						}
+						else 
+						{
+							println!("Nay!");
+						}
+
+						let selected_shape_idx = rng.gen::<usize>() % 3;
+						shapes = build_shapes();
+						shapes[selected_shape_idx].play_audio(&audio_tx);
+					}
 				},
 				_ => {},
 			}
@@ -437,15 +468,18 @@ fn main()
 		for idx in 0..shapes.len()
 		{
 			let mut shape = &shapes[idx];
-			shape.draw(&mut renderer);
+
+			let color = if (mouse_pos - shape.position).magnitude() < SIZE { Color::RGB(0, 255, 0) } else { Color::RGB(0, 128, 0) };
+
+			shape.draw(&mut renderer, color);
 		}
 
 		renderer.present();
 
 		// Timer handling.
-		let nextTime = get_time_seconds();
-		tick = nextTime - lastTime;
-		lastTime = nextTime;
+		let next_time = get_time_seconds();
+		tick = next_time - last_time;
+		last_time = next_time;
 		time = time + tick;
 	}
 }

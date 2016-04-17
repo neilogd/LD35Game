@@ -19,6 +19,11 @@ impl Vec2d
 			y: in_y,
 		}
 	}
+
+	pub fn magnitude(&self) -> f32
+	{
+		(self.x * self.x + self.y * self.y).sqrt()
+	}
 }
 
 impl Add<Vec2d> for Vec2d
